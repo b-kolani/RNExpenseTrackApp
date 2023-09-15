@@ -1,6 +1,6 @@
 import { createContext, useReducer } from "react";
 
-const DUMMY_EXPENSES = [
+/**const DUMMY_EXPENSES = [
   {
     id: "e1",
     description: "A pair of shoes",
@@ -55,11 +55,12 @@ const DUMMY_EXPENSES = [
     amount: 18.59,
     date: new Date("2023-09-08"),
   },
-];
+];*/
 
 export const ExpensesContext = createContext({
   expenses: [],
   addExpense: ({ description, amount, date }) => {},
+  setExpenses: (expenses) => {},
   deleteExpense: (id) => {},
   updateExpense: (id, { description, amount, date }) => {},
 });
@@ -82,9 +83,17 @@ function expensesReducer(state, action) {
     And I'm using a new object and a new array here to update the state
     in an immutable way.So to make sure that we don't mutate
     original data in memory, but we create a brand new state snapshot, which
-    then will be used by React to update the old state snapshot. */
-      const id = new Date().toString() + Math.random().toString();
-      return [{ ...action.payload, id: id }, ...state];
+    then will be used by React to update the old state snapshot.Here wet rid of 
+    this custom ID because now we sav data in a backend IDs will be generated 
+    automatically by Firebase.So we must remove it otherwise will get 
+    a problem when updating, deleting etc. */
+      //const id = new Date().toString() + Math.random().toString();
+      return [action.payload, ...state];
+    case "SET":
+      /**By default fetched expenses displayed in the order of Firebase 
+    they are listed and ordered by time not by date.Now I wanna keep my order*/
+      const inverted = action.payload.reverse();
+      return inverted;
     case "UPDATE":
       const updatableExpenseIndex = state.findIndex(
         (expense) => expense.id === action.payload.id
@@ -122,8 +131,9 @@ function ExpensesContextProvider({ children }) {
     initial state value before the reducer function executed the first time.
     And then when it executes the next time, because an action was dispatched, 
     we get the existing state, which is that array full of dummy expenses in 
-    this case. */
-  const [expensesState, dispatch] = useReducer(expensesReducer, DUMMY_EXPENSES);
+    this case.As we have get rid of DUMMY_EXPENSES we used for test purpose, now 
+    we put as initial or default values an empty array. */
+  const [expensesState, dispatch] = useReducer(expensesReducer, []);
 
   function addExpense(expenseData) {
     /**So you can pass a value to dispatch which will be made available by 
@@ -140,6 +150,10 @@ function ExpensesContextProvider({ children }) {
     dispatch({ type: "ADD", payload: expenseData });
   }
 
+  function setExpenses(expenses) {
+    dispatch({ type: "SET", payload: expenses });
+  }
+
   function deleteExpense(id) {
     dispatch({ type: "DELETE", payload: id });
   }
@@ -154,6 +168,7 @@ function ExpensesContextProvider({ children }) {
   that provider component down there.*/
   const value = {
     expenses: expensesState,
+    setExpenses: setExpenses,
     addExpense: addExpense,
     deleteExpense: deleteExpense,
     updateExpense: updateExpense,

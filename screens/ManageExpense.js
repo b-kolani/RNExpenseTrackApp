@@ -1,13 +1,19 @@
-import { StyleSheet, TextInput, View } from "react-native";
-import { useContext, useLayoutEffect } from "react";
+import { StyleSheet, View } from "react-native";
+import { useContext, useLayoutEffect, useState } from "react";
 
 import IconButton from "../components/UI/IconButton";
 import { GlobalStyles } from "../constants/styles";
-import Button from "../components/UI/Button";
 import { ExpensesContext } from "../store/expenses-context";
 import ExpenseForm from "../components/ManageExpense/ExpenseForm";
+import { storeExpense, updateExpense, deleteExpense } from "../util/http";
+import LoadingOverlay from "../components/UI/LoadingOverlay";
+import ErrorOverlay from "../components/UI/ErrorOverlay";
 
 function ManageExpense({ route, navigation }) {
+  /**Initially, this state below is false because initially, we're not sending
+  data.Initially, we're gathering data from the user through the user inputs.  */
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState();
   const expensesCtx = useContext(ExpensesContext);
 
   /**This screen component will have different modes, this simply 
@@ -44,37 +50,101 @@ function ManageExpense({ route, navigation }) {
     });
   }, [navigation, isEditing]);
 
-  function deleteExpenseHandler() {
-    /** The goBack() method provided by the navigation prop, 
+  async function deleteExpenseHandler() {
+    setIsSubmitting(true);
+    try {
+      /**Here it is up to you, the order in which we want to delete 
+    either locally before in backend or in backend before in context 
+    locally.*/
+      await deleteExpense(editedExpenseId);
+      /** The goBack() method provided by the navigation prop, 
     which is basically the equivalent to pressing a back 
     button if there is one.Go back in the context of this 
     screen means that we go back to the screen that opened
     that screen, which means that we close this screen, we 
     close the modal. */
-    /**Make the delete before go back to the previous screen
+      /**Make the delete before go back to the previous screen
     because this runs synchronously anyways */
-    expensesCtx.deleteExpense(editedExpenseId);
-    navigation.goBack();
+      expensesCtx.deleteExpense(editedExpenseId);
+      navigation.goBack(); /**Note:setIsSubmitting(false);we don't need to switch back to false
+      then because we are closing this screen anyways by going back, 
+      so there's no need to update this state. */
+    } catch (error) {
+      setError("Could not delete expense - please try again later");
+      setIsSubmitting(false); /**setIsSubmitting(false);here we need to 
+      switch here back to false
+      then because in that case, we stay on this page, and if we then
+      clicked the okay button on the ErrorOverlay component,I don't wanna 
+      show the  LoadingOverlay instead.*/
+    }
   }
 
   function cancelHandler() {
     navigation.goBack();
   }
 
-  function confirmHandler(expenseData) {
-    /**For test purpose we can pass some dummy objects 
+  /**We transform this function into an async one, so that we can await 
+  the storeExpense because it will return a promise.And then, eventually 
+  we will get that ID to which that promise resolves. */
+  async function confirmHandler(expenseData) {
+    /**When this function confirmHandler starts to execute that we
+    then want to set isSubmitting to true because we will be sending 
+    either the update or the adding request.*/
+    setIsSubmitting(true);
+    try {
+      /**For test purpose we can pass some dummy objects 
     data to different functions.For example {
         description: "Test",
         amount: 19.99,
         date: new Date("2023-09-06"),
       } before using real entered values of the expenseData 
       parameter which is an object.*/
-    if (isEditing) {
-      expensesCtx.updateExpense(editedExpenseId, expenseData);
-    } else {
-      expensesCtx.addExpense(expenseData);
+      if (isEditing) {
+        /**We're doing here some optimistic updating here because we updated
+      locally first, and then we send the updated data to the backend. */
+        expensesCtx.updateExpense(editedExpenseId, expenseData);
+        /**We could also add await keyword below, but it doesn't matter too much
+      in this place because at the moment we're not doing anything, once we're 
+      done sending the request.Still for completeness sake, I will await so that
+      we actually only close the modal or screen and we only go back after the
+      update request succeeded.I guess that (goBack) is the one thing we are 
+      doing after sending the request, so waiting for the response does make 
+      sense here.*/
+        await updateExpense(editedExpenseId, expenseData);
+      } else {
+        /**This function will send a http request.Here, for adding we can't
+      choose that reversed order i.e we can't add locally before send new 
+      data to the backend because here we rely on the response of our request
+      to get the auto created ID.*/
+        const id = await storeExpense(expenseData);
+        expensesCtx.addExpense({ ...expenseData, id: id });
+      }
+      navigation.goBack();
+    } catch (error) {
+      setError("Could not save data - please try again later!");
+      setIsSubmitting(false);
     }
-    navigation.goBack();
+  }
+
+  /**When this function is triggered by clicking the okay button
+  on the ErrorOverlay, the inputs are cleared because the ManageExpense
+  component was reevaluated, and therefore it wiped all the entered data.
+  Now you could save that entered data in some state that is then used once
+  this errorHandler function executes here to keep things simpler.And since
+  the okay button on the ErrorOverlay component doesn't make a lot of sense
+  in this app anyways, I will get rid of that errorHandler so in this component
+  we don't need to pass onConfirm as prop with the errorHandler function as value.
+  */
+  /**  function errorHandler() {
+    setError(null);
+  }*/
+
+  if (error && !isSubmitting) {
+    return <ErrorOverlay message={error} />;
+  }
+
+  if (isSubmitting) {
+    return <LoadingOverlay />;
   }
 
   return (
